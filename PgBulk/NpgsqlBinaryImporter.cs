@@ -27,36 +27,37 @@ public sealed class NpgsqlBinaryImporter<T> : IDisposable, IAsyncDisposable
         _binaryImporter.Dispose();
     }
 
-    public async ValueTask<ulong> WriteToBinaryImporter(IEnumerable<T> entities)
+    public async ValueTask<ulong> WriteToBinaryImporter(IEnumerable<T> entities, CancellationToken cancellationToken = default)
     {
         ulong inserted = 0;
 
         foreach (var entity in entities)
         {
-            await WriteToBinaryImporter(entity);
+            cancellationToken.ThrowIfCancellationRequested();
+            await WriteToBinaryImporter(entity, cancellationToken);
             inserted++;
         }
 
         return inserted;
     }
 
-    public ValueTask WriteToBinaryImporter(T entity)
+    public ValueTask WriteToBinaryImporter(T entity, CancellationToken cancellationToken = default)
     {
         if (entity == null)
             throw new ArgumentNullException(nameof(entity));
 
-        return WriteToBinaryImporter(_columns.Select(c => c.GetValue(entity)));
+        return WriteToBinaryImporter(_columns.Select(c => c.GetValue(entity)), cancellationToken);
     }
 
-    public async ValueTask WriteToBinaryImporter(IEnumerable<object?> values)
+    public async ValueTask WriteToBinaryImporter(IEnumerable<object?> values, CancellationToken cancellationToken = default)
     {
-        await _writeLock.WaitAsync();
+        await _writeLock.WaitAsync(cancellationToken);
 
         try
         {
-            await _binaryImporter.StartRowAsync();
+            await _binaryImporter.StartRowAsync(cancellationToken);
 
-            foreach (var value in values) await _binaryImporter.WriteAsync(value);
+            foreach (var value in values) await _binaryImporter.WriteAsync(value, cancellationToken);
         }
         finally
         {
@@ -64,8 +65,8 @@ public sealed class NpgsqlBinaryImporter<T> : IDisposable, IAsyncDisposable
         }
     }
 
-    public ValueTask<ulong> CompleteAsync()
+    public ValueTask<ulong> CompleteAsync(CancellationToken cancellationToken = default)
     {
-        return _binaryImporter.CompleteAsync();
+        return _binaryImporter.CompleteAsync(cancellationToken);
     }
 }

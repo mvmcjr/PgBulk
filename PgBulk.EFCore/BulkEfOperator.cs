@@ -9,11 +9,12 @@ namespace PgBulk.EFCore;
 
 public class BulkEfOperator : BulkOperator
 {
-    public BulkEfOperator(DbContext dbContext, int? timeoutOverride, bool useContextConnection = true) : base(OverrideCommandTimeout(dbContext.Database.GetConnectionString(), timeoutOverride), new EntityTableInformationProvider(dbContext))
+    public BulkEfOperator(DbContext dbContext, int? timeoutOverride = null, bool useContextConnection = true) : base(dbContext.Database.GetConnectionString(), new EntityTableInformationProvider(dbContext))
     {
         DbContext = dbContext;
         DisposeConnection = false;
         UseContextConnection = useContextConnection;
+        CommandTimeout = timeoutOverride ?? 0;
 
         var serviceProvider = dbContext.GetInfrastructure();
         Logger = serviceProvider.GetService<ILogger<BulkEfOperator>>();
@@ -25,24 +26,15 @@ public class BulkEfOperator : BulkOperator
 
     private bool UseContextConnection { get; }
 
-    private static string OverrideCommandTimeout(string? originalConnectionString, int? timeoutOverride)
-    {
-        var newConnectionString = new NpgsqlConnectionStringBuilder(originalConnectionString);
-
-        if (timeoutOverride.HasValue) newConnectionString.CommandTimeout = timeoutOverride.Value;
-
-        return newConnectionString.ToString();
-    }
-
-    public override async Task<NpgsqlConnection> CreateOpenedConnection()
+    public override async Task<NpgsqlConnection> CreateOpenedConnection(CancellationToken cancellationToken = default)
     {
         if (!UseContextConnection)
-            return await base.CreateOpenedConnection();
+            return await base.CreateOpenedConnection(cancellationToken);
 
         if (DbContext.Database.GetDbConnection() is not NpgsqlConnection npgsqlConnection) throw new InvalidOperationException("Connection is not NpgsqlConnection");
 
         if (npgsqlConnection.State == ConnectionState.Closed)
-            await npgsqlConnection.OpenAsync();
+            await npgsqlConnection.OpenAsync(cancellationToken);
 
         return npgsqlConnection;
     }

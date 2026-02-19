@@ -21,6 +21,12 @@ public class BulkOperator
 
     public ITableInformationProvider TableInformationProvider { get; }
 
+    /// <summary>
+    ///     Command timeout in seconds applied to every NpgsqlCommand.
+    ///     Default is 0 (infinite), which is appropriate for bulk operations on large datasets.
+    /// </summary>
+    public int CommandTimeout { get; set; }
+
     protected bool DisposeConnection { get; set; } = true;
 
     private string? ConnectionString { get; }
@@ -33,20 +39,25 @@ public class BulkOperator
     {
     }
 
-    public virtual async Task<NpgsqlConnection> CreateOpenedConnection()
+    public virtual async Task<NpgsqlConnection> CreateOpenedConnection(CancellationToken cancellationToken = default)
     {
-        var connection = new NpgsqlConnection(ConnectionString);
-        await connection.OpenAsync();
+        var builder = new NpgsqlConnectionStringBuilder(ConnectionString)
+        {
+            CommandTimeout = CommandTimeout
+        };
+
+        var connection = new NpgsqlConnection(builder.ToString());
+        await connection.OpenAsync(cancellationToken);
         return connection;
     }
 
-    public async Task MergeAsync<T>(ICollection<T> entities, ITableKeyProvider? tableKeyProvider = null)
+    public async Task MergeAsync<T>(ICollection<T> entities, ITableKeyProvider? tableKeyProvider = null, CancellationToken cancellationToken = default)
     {
-        var connection = await CreateOpenedConnection();
+        var connection = await CreateOpenedConnection(cancellationToken);
 
         try
         {
-            await MergeAsync(connection, entities, tableKeyProvider ?? new DefaultTableKeyProvider());
+            await MergeAsync(connection, entities, tableKeyProvider ?? new DefaultTableKeyProvider(), cancellationToken: cancellationToken);
         }
         finally
         {
@@ -55,13 +66,13 @@ public class BulkOperator
         }
     }
 
-    public async Task InsertAsync<T>(IEnumerable<T> entities, bool onConflictIgnore)
+    public async Task InsertAsync<T>(IEnumerable<T> entities, bool onConflictIgnore, CancellationToken cancellationToken = default)
     {
-        var connection = await CreateOpenedConnection();
+        var connection = await CreateOpenedConnection(cancellationToken);
 
         try
         {
-            await InsertToTableAsync(connection, entities, onConflictIgnore);
+            await InsertToTableAsync(connection, entities, onConflictIgnore, cancellationToken);
         }
         finally
         {
@@ -70,19 +81,19 @@ public class BulkOperator
         }
     }
 
-    private async Task<ulong> InsertToTableAsync<T>(NpgsqlConnection npgsqlConnection, IEnumerable<T> entities, bool onConflictIgnore)
+    private async Task<ulong> InsertToTableAsync<T>(NpgsqlConnection npgsqlConnection, IEnumerable<T> entities, bool onConflictIgnore, CancellationToken cancellationToken = default)
     {
         var tableInformation = await TableInformationProvider.GetTableInformation(typeof(T));
-        return await InsertToTableAsync(npgsqlConnection, entities, tableInformation, tableInformation.Name, onConflictIgnore);
+        return await InsertToTableAsync(npgsqlConnection, entities, tableInformation, tableInformation.Name, onConflictIgnore, cancellationToken);
     }
 
-    public virtual async Task MergeAsync<T>(NpgsqlConnection connection, ICollection<T> entities, ITableKeyProvider tableKeyProvider, Func<string, string, Task>? runAfterTemporaryTableInsert = null)
+    public virtual async Task MergeAsync<T>(NpgsqlConnection connection, ICollection<T> entities, ITableKeyProvider tableKeyProvider, Func<string, string, Task>? runAfterTemporaryTableInsert = null, CancellationToken cancellationToken = default)
     {
         var tableInformation = await TableInformationProvider.GetTableInformation(typeof(T));
         var temporaryName = GetTemporaryTableName(tableInformation);
 
-        await CreateTemporaryTable(connection, tableInformation, temporaryName);
-        await InsertToTableAsync(connection, entities, tableInformation, temporaryName, false);
+        await CreateTemporaryTable(connection, tableInformation, temporaryName, cancellationToken);
+        await InsertToTableAsync(connection, entities, tableInformation, temporaryName, false, cancellationToken);
 
         if (runAfterTemporaryTableInsert != null) await runAfterTemporaryTableInsert(tableInformation.Name, temporaryName);
 
@@ -111,11 +122,11 @@ public class BulkOperator
             else
                 baseCommand.Append("DO NOTHING");
 
-            await ExecuteCommand(connection, baseCommand.ToString());
+            await ExecuteCommand(connection, baseCommand.ToString(), cancellationToken: cancellationToken);
         }
         else
         {
-            await using var transaction = await connection.BeginTransactionAsync();
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
             try
             {
                 var deleteScriptBuilder = new StringBuilder($"delete from \"{tableInformation.Schema}\".\"{tableInformation.Name}\" where ");
@@ -141,11 +152,11 @@ public class BulkOperator
                         .Select(i => new NpgsqlParameter($"p{i.Index}", i.GetValue(entity)))
                         .ToArray();
 
-                    await ExecuteCommand(connection, deleteScript, npgsqlParameters);
+                    await ExecuteCommand(connection, deleteScript, npgsqlParameters, cancellationToken);
                 }
 
-                await ExecuteCommand(connection, $"insert into \"{tableInformation.Schema}\".\"{tableInformation.Name}\" (select * from \"{temporaryName}\")");
-                await transaction.CommitAsync();
+                await ExecuteCommand(connection, $"insert into \"{tableInformation.Schema}\".\"{tableInformation.Name}\" (select * from \"{temporaryName}\")", cancellationToken: cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
             }
             finally
             {
@@ -154,16 +165,17 @@ public class BulkOperator
         }
     }
 
-    private async Task CreateTemporaryTable(NpgsqlConnection connection, ITableInformation sourceTable, string temporaryName)
+    private async Task CreateTemporaryTable(NpgsqlConnection connection, ITableInformation sourceTable, string temporaryName, CancellationToken cancellationToken = default)
     {
         var script = $"CREATE TEMPORARY TABLE \"{temporaryName}\" AS TABLE \"{sourceTable.Schema}\".\"{sourceTable.Name}\" WITH NO DATA;";
-        await ExecuteCommand(connection, script);
+        await ExecuteCommand(connection, script, cancellationToken: cancellationToken);
     }
 
-    private async Task<int> ExecuteCommand(NpgsqlConnection connection, string script, IEnumerable<NpgsqlParameter>? parameters = null)
+    private async Task<int> ExecuteCommand(NpgsqlConnection connection, string script, IEnumerable<NpgsqlParameter>? parameters = null, CancellationToken cancellationToken = default)
     {
         await using var npgsqlCommand = connection.CreateCommand();
         npgsqlCommand.CommandText = script;
+        npgsqlCommand.CommandTimeout = CommandTimeout;
 
         if (parameters != null)
             foreach (var parameter in parameters)
@@ -171,21 +183,21 @@ public class BulkOperator
 
         LogBeforeCommand(npgsqlCommand);
         var stopWatch = Stopwatch.StartNew();
-        var updatedRows = await npgsqlCommand.ExecuteNonQueryAsync();
+        var updatedRows = await npgsqlCommand.ExecuteNonQueryAsync(cancellationToken);
 
-        stopWatch.Start();
+        stopWatch.Stop();
         LogAfterCommand(npgsqlCommand, stopWatch.Elapsed);
 
         return updatedRows;
     }
 
-    public async Task SyncAsync<T>(IEnumerable<T> entities, string? deleteWhere = null, Func<string, string, Task>? runAfterTemporaryTableInsert = null)
+    public async Task SyncAsync<T>(IEnumerable<T> entities, string? deleteWhere = null, Func<string, string, Task>? runAfterTemporaryTableInsert = null, CancellationToken cancellationToken = default)
     {
-        var connection = await CreateOpenedConnection();
+        var connection = await CreateOpenedConnection(cancellationToken);
 
         try
         {
-            await SyncAsync(connection, entities, deleteWhere, runAfterTemporaryTableInsert);
+            await SyncAsync(connection, entities, deleteWhere, runAfterTemporaryTableInsert, cancellationToken);
         }
         finally
         {
@@ -194,17 +206,17 @@ public class BulkOperator
         }
     }
 
-    public virtual async Task SyncAsync<T>(NpgsqlConnection connection, IEnumerable<T> entities, string? deleteWhere, Func<string, string, Task>? runAfterTemporaryTableInsert = null)
+    public virtual async Task SyncAsync<T>(NpgsqlConnection connection, IEnumerable<T> entities, string? deleteWhere, Func<string, string, Task>? runAfterTemporaryTableInsert = null, CancellationToken cancellationToken = default)
     {
         var tableInformation = await TableInformationProvider.GetTableInformation(typeof(T));
         var temporaryName = GetTemporaryTableName(tableInformation);
 
-        await CreateTemporaryTable(connection, tableInformation, temporaryName);
-        await InsertToTableAsync(connection, entities, tableInformation, temporaryName, false);
+        await CreateTemporaryTable(connection, tableInformation, temporaryName, cancellationToken);
+        await InsertToTableAsync(connection, entities, tableInformation, temporaryName, false, cancellationToken);
 
         if (runAfterTemporaryTableInsert != null) await runAfterTemporaryTableInsert(tableInformation.Name, temporaryName);
 
-        await using var transaction = await connection.BeginTransactionAsync();
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
         var deleteScriptBuilder = new StringBuilder($"delete from \"{tableInformation.Name}\"");
 
@@ -214,9 +226,9 @@ public class BulkOperator
             deleteScriptBuilder.AppendLine(deleteWhere);
         }
 
-        await ExecuteCommand(connection, deleteScriptBuilder.ToString());
-        await ExecuteCommand(connection, $"insert into \"{tableInformation.Name}\" (select * from \"{temporaryName}\")");
-        await transaction.CommitAsync(CancellationToken.None);
+        await ExecuteCommand(connection, deleteScriptBuilder.ToString(), cancellationToken: cancellationToken);
+        await ExecuteCommand(connection, $"insert into \"{tableInformation.Name}\" (select * from \"{temporaryName}\")", cancellationToken: cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public virtual string GetTemporaryTableName(ITableInformation tableColumnInformation)
@@ -264,30 +276,26 @@ public class BulkOperator
 
         var command = commandBuilder.ToString();
 
-#if NET5_0
-        return await Task.FromResult(new NpgsqlBinaryImporter<T>(connection.BeginBinaryImport(command), columnsFiltered));
-#else
         return new NpgsqlBinaryImporter<T>(await connection.BeginBinaryImportAsync(command), columnsFiltered);
-#endif
     }
 
-    private async Task<ulong> InsertToTableAsync<T>(NpgsqlConnection connection, IEnumerable<T> entities, ITableInformation tableInformation, string tableName, bool onConflictIgnore)
+    private async Task<ulong> InsertToTableAsync<T>(NpgsqlConnection connection, IEnumerable<T> entities, ITableInformation tableInformation, string tableName, bool onConflictIgnore, CancellationToken cancellationToken = default)
     {
-        if (!onConflictIgnore) return await InsertToTableAsync(connection, entities, tableInformation, tableName);
+        if (!onConflictIgnore) return await InsertToTableAsync(connection, entities, tableInformation, tableName, cancellationToken);
 
         var temporaryName = GetTemporaryTableName(tableInformation);
-        await CreateTemporaryTable(connection, tableInformation, temporaryName);
-        await InsertToTableAsync(connection, entities, tableInformation, temporaryName);
-        var count = await ExecuteCommand(connection, $"insert into \"{tableInformation.Schema}\".\"{tableInformation.Name}\" (select * from \"{temporaryName}\") ON CONFLICT DO NOTHING");
+        await CreateTemporaryTable(connection, tableInformation, temporaryName, cancellationToken);
+        await InsertToTableAsync(connection, entities, tableInformation, temporaryName, cancellationToken);
+        var count = await ExecuteCommand(connection, $"insert into \"{tableInformation.Schema}\".\"{tableInformation.Name}\" (select * from \"{temporaryName}\") ON CONFLICT DO NOTHING", cancellationToken: cancellationToken);
         return (ulong)count;
     }
 
-    private async Task<ulong> InsertToTableAsync<T>(NpgsqlConnection connection, IEnumerable<T> entities, ITableInformation tableInformation, string tableName)
+    private async Task<ulong> InsertToTableAsync<T>(NpgsqlConnection connection, IEnumerable<T> entities, ITableInformation tableInformation, string tableName, CancellationToken cancellationToken = default)
     {
         await using var npgsqlBinaryImporter = await CreateBinaryImporterAsync<T>(connection, tableInformation.Columns, tableName);
 
-        var inserted = await npgsqlBinaryImporter.WriteToBinaryImporter(entities);
-        await npgsqlBinaryImporter.CompleteAsync();
+        var inserted = await npgsqlBinaryImporter.WriteToBinaryImporter(entities, cancellationToken);
+        await npgsqlBinaryImporter.CompleteAsync(cancellationToken);
         await npgsqlBinaryImporter.DisposeAsync();
         return inserted;
     }

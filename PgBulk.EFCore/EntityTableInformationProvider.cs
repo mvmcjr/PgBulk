@@ -23,11 +23,7 @@ public class EntityTableInformationProvider : ITableInformationProvider
 
         if (tableName == null) throw new InvalidOperationException($"Failed to find table name for type {entityType.Name}");
 
-#if NET5_0
-        var storeObjectIdentifier = StoreObjectIdentifier.Table(tableName, null);
-#else
         var storeObjectIdentifier = StoreObjectIdentifier.Table(tableName);
-#endif
         var columns = model
             .GetProperties()
             .Where(p => p.PropertyInfo != null)
