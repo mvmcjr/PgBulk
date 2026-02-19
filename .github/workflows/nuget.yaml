@@ -8,7 +8,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: mcr.microsoft.com/dotnet/sdk:8.0
 
     services:
       postgres:
@@ -26,21 +25,26 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v5
 
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+
     - name: Restore NuGet packages
       run: dotnet restore
 
-    - name: Build and pack NuGet packages
-      run: |
-        dotnet build --configuration Release
-        dotnet pack --configuration Release --include-symbols --include-source --output ./nupkgs
+    - name: Build
+      run: dotnet build --configuration Release --no-restore
 
     - name: Run tests
       env:
         T_POSTGRES_HOST: postgres
         T_POSTGRES_USER: postgres
         T_POSTGRES_PASS: postgres
-      run: dotnet test -f net8.0
+      run: dotnet test --configuration Release --no-build
+
+    - name: Pack NuGet packages
+      run: dotnet pack --configuration Release --no-build --output ./nupkgs
 
     - name: Publish NuGet packages
-      run: |
-        dotnet nuget push ./nupkgs/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+      run: dotnet nuget push ./nupkgs/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate

@@ -5,8 +5,35 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <LangVersion>latest</LangVersion>
-        <PackageProjectUrl>https://github.com/redbaty/PgBulk</PackageProjectUrl>
+
+        <!-- NuGet package metadata -->
         <PackageVersion>2.0.0</PackageVersion>
+        <Authors>redbaty</Authors>
+        <Description>High-performance bulk operations (insert, merge, sync) for PostgreSQL using Npgsql binary import.</Description>
+        <PackageProjectUrl>https://github.com/redbaty/PgBulk</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/redbaty/PgBulk</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageTags>postgresql;npgsql;bulk;insert;merge;sync;copy;binary-import</PackageTags>
+
+        <!-- Source Link and embedded sources for rich debugging -->
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <EmbedUntrackedSources>true</EmbedUntrackedSources>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+
+        <!-- Deterministic builds for reproducibility -->
+        <Deterministic>true</Deterministic>
+        <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
     </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.*" PrivateAssets="All" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="/" />
+    </ItemGroup>
 
 </Project>
