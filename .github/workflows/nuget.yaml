@@ -8,6 +8,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    container: mcr.microsoft.com/dotnet/sdk:10.0
 
     services:
       postgres:
@@ -24,11 +25,6 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v5
-
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: 10.0.x
 
     - name: Restore NuGet packages
       run: dotnet restore
