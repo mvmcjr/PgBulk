@@ -98,22 +98,18 @@ public class BulkOperator
         if (runAfterTemporaryTableInsert != null) await runAfterTemporaryTableInsert(tableInformation.Name, temporaryName);
 
         var tableKey = tableKeyProvider.GetKeyColumns(tableInformation);
-        var primaryKeyColumns = tableKey
+        var primaryKeyColumns = string.Join(",", tableKey
             .Columns
-            .Select(i => i.SafeName)
-            .DefaultIfEmpty()
-            .Aggregate((x, y) => $"{x},{y}");
+            .Select(i => i.SafeName));
 
         if (string.IsNullOrEmpty(primaryKeyColumns))
             throw new InvalidOperationException($"No primary keys defined for table \"{tableInformation.Name}\"");
 
         if (tableKey.IsUniqueConstraint)
         {
-            var setStatement = tableInformation.Columns
+            var setStatement = string.Join(", ", tableInformation.Columns
                 .Where(i => !i.PrimaryKey)
-                .Select(i => $"\"{i.Name}\" = EXCLUDED.\"{i.Name}\"")
-                .DefaultIfEmpty()
-                .Aggregate((x, y) => $"{x}, {y}");
+                .Select(i => $"\"{i.Name}\" = EXCLUDED.\"{i.Name}\""));
 
             var baseCommand = new StringBuilder($"insert into \"{tableInformation.Schema}\".\"{tableInformation.Name}\" (select * from \"{temporaryName}\") ON CONFLICT ");
 
@@ -129,33 +125,16 @@ public class BulkOperator
             await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
             try
             {
-                var deleteScriptBuilder = new StringBuilder($"delete from \"{tableInformation.Schema}\".\"{tableInformation.Name}\" where ");
-                var first = true;
+                var deleteScriptBuilder = new StringBuilder($"DELETE FROM \"{tableInformation.Schema}\".\"{tableInformation.Name}\" t USING \"{temporaryName}\" tmp WHERE ");
 
-                foreach (var column in tableKey.Columns.OrderBy(i => i.Index))
-                {
-                    if (!first)
-                        deleteScriptBuilder.Append(" and ");
+                var keyConditions = string.Join(" AND ", tableKey.Columns
+                    .OrderBy(i => i.Index)
+                    .Select(c => $"t.{c.SafeName} = tmp.{c.SafeName}"));
 
-                    deleteScriptBuilder.Append($"{column.SafeName} = @p{column.Index}");
-                    first = false;
-                }
+                deleteScriptBuilder.Append(keyConditions);
 
-                var deleteScript = deleteScriptBuilder.ToString();
-
-                foreach (var entity in entities)
-                {
-                    if(entity == null)
-                        throw new ArgumentNullException(nameof(entities), "No entity can be null");
-                    
-                    var npgsqlParameters = tableKey.Columns
-                        .Select(i => new NpgsqlParameter($"p{i.Index}", i.GetValue(entity)))
-                        .ToArray();
-
-                    await ExecuteCommand(connection, deleteScript, npgsqlParameters, cancellationToken);
-                }
-
-                await ExecuteCommand(connection, $"insert into \"{tableInformation.Schema}\".\"{tableInformation.Name}\" (select * from \"{temporaryName}\")", cancellationToken: cancellationToken);
+                await ExecuteCommand(connection, deleteScriptBuilder.ToString(), cancellationToken: cancellationToken);
+                await ExecuteCommand(connection, $"INSERT INTO \"{tableInformation.Schema}\".\"{tableInformation.Name}\" (SELECT * FROM \"{temporaryName}\")", cancellationToken: cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
             }
             finally
@@ -264,9 +243,8 @@ public class BulkOperator
         if (columnsFiltered.Count <= 0)
             throw new InvalidOperationException("No valid columns found on type " + typeof(T).Name);
 
-        var columnsString = columnsFiltered
-            .Select(i => $"\"{i.Name}\"")
-            .Aggregate((x, y) => $"{x}, {y}");
+        var columnsString = string.Join(", ", columnsFiltered
+            .Select(i => $"\"{i.Name}\""));
 
         var commandBuilder = new StringBuilder("COPY ");
 

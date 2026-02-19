@@ -7,7 +7,7 @@ public sealed class NpgsqlBinaryImporter<T> : IDisposable, IAsyncDisposable
 {
     private readonly NpgsqlBinaryImporter _binaryImporter;
 
-    private readonly ICollection<ITableColumnInformation> _columns;
+    private readonly IReadOnlyList<ITableColumnInformation> _columns;
 
     private readonly SemaphoreSlim _writeLock = new(1, 1);
 
@@ -29,39 +29,54 @@ public sealed class NpgsqlBinaryImporter<T> : IDisposable, IAsyncDisposable
 
     public async ValueTask<ulong> WriteToBinaryImporter(IEnumerable<T> entities, CancellationToken cancellationToken = default)
     {
-        ulong inserted = 0;
-
-        foreach (var entity in entities)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            await WriteToBinaryImporter(entity, cancellationToken);
-            inserted++;
-        }
-
-        return inserted;
-    }
-
-    public ValueTask WriteToBinaryImporter(T entity, CancellationToken cancellationToken = default)
-    {
-        if (entity == null)
-            throw new ArgumentNullException(nameof(entity));
-
-        return WriteToBinaryImporter(_columns.Select(c => c.GetValue(entity)), cancellationToken);
-    }
-
-    public async ValueTask WriteToBinaryImporter(IEnumerable<object?> values, CancellationToken cancellationToken = default)
-    {
         await _writeLock.WaitAsync(cancellationToken);
 
         try
         {
-            await _binaryImporter.StartRowAsync(cancellationToken);
+            ulong inserted = 0;
 
-            foreach (var value in values) await _binaryImporter.WriteAsync(value, cancellationToken);
+            foreach (var entity in entities)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await WriteRowAsync(entity, cancellationToken);
+                inserted++;
+            }
+
+            return inserted;
         }
         finally
         {
             _writeLock.Release();
+        }
+    }
+
+    public async ValueTask WriteToBinaryImporter(T entity, CancellationToken cancellationToken = default)
+    {
+        if (entity == null)
+            throw new ArgumentNullException(nameof(entity));
+
+        await _writeLock.WaitAsync(cancellationToken);
+
+        try
+        {
+            await WriteRowAsync(entity, cancellationToken);
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
+    private async ValueTask WriteRowAsync(T entity, CancellationToken cancellationToken)
+    {
+        if (entity == null)
+            throw new ArgumentNullException(nameof(entity));
+
+        await _binaryImporter.StartRowAsync(cancellationToken);
+
+        for (var i = 0; i < _columns.Count; i++)
+        {
+            await _binaryImporter.WriteAsync(_columns[i].GetValue(entity), cancellationToken);
         }
     }
 
