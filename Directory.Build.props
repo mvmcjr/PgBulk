@@ -8,10 +8,10 @@
 
         <!-- NuGet package metadata -->
         <PackageVersion>2.0.0</PackageVersion>
-        <Authors>redbaty</Authors>
+        <Authors>mvmcjr</Authors>
         <Description>High-performance bulk operations (insert, merge, sync) for PostgreSQL using Npgsql binary import.</Description>
-        <PackageProjectUrl>https://github.com/redbaty/PgBulk</PackageProjectUrl>
-        <RepositoryUrl>https://github.com/redbaty/PgBulk</RepositoryUrl>
+        <PackageProjectUrl>https://github.com/mvmcjr/PgBulk</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/mvmcjr/PgBulk</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageReadmeFile>README.md</PackageReadmeFile>
