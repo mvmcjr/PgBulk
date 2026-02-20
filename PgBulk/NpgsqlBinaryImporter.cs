@@ -80,6 +80,23 @@ public sealed class NpgsqlBinaryImporter<T> : IDisposable, IAsyncDisposable
         }
     }
 
+    public async ValueTask WriteValuesAsync(IEnumerable<object?> values, CancellationToken cancellationToken = default)
+    {
+        await _writeLock.WaitAsync(cancellationToken);
+
+        try
+        {
+            await _binaryImporter.StartRowAsync(cancellationToken);
+
+            foreach (var value in values)
+                await _binaryImporter.WriteAsync(value, cancellationToken);
+        }
+        finally
+        {
+            _writeLock.Release();
+        }
+    }
+
     public ValueTask<ulong> CompleteAsync(CancellationToken cancellationToken = default)
     {
         return _binaryImporter.CompleteAsync(cancellationToken);
