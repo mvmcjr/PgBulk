@@ -7,7 +7,7 @@
         <LangVersion>latest</LangVersion>
 
         <!-- NuGet package metadata -->
-        <PackageVersion>2.0.0</PackageVersion>
+        <PackageVersion>2.0.1</PackageVersion>
         <Authors>mvmcjr</Authors>
         <Description>High-performance bulk operations (insert, merge, sync) for PostgreSQL using Npgsql binary import.</Description>
         <PackageProjectUrl>https://github.com/mvmcjr/PgBulk</PackageProjectUrl>
