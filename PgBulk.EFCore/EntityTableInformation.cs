@@ -14,6 +14,7 @@ public class EntityTableInformation : ITableInformation
     public string Name { get; }
 
     public string Schema { get; }
+    public string Schemas { get; }
 
     public ICollection<ITableColumnInformation> Columns { get; }
 }
