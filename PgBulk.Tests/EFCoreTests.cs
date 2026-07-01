@@ -151,6 +151,32 @@ public class EFCoreTests
     }
 
     [TestMethod]
+    public async Task InsertWithValueConverter()
+    {
+        await using var myContext = CreateContext();
+
+        try
+        {
+            var rows = new[]
+            {
+                new ConverterTestRow { Id = 1, Wrapped = new StringWrapper("hello") },
+                new ConverterTestRow { Id = 2, Wrapped = new StringWrapper("world") },
+            };
+
+            await myContext.BulkInsertAsync(rows);
+
+            var stored = await myContext.ConverterTestRows.OrderBy(r => r.Id).ToListAsync();
+            Assert.AreEqual(2, stored.Count);
+            Assert.AreEqual("hello", stored[0].Wrapped.Value);
+            Assert.AreEqual("world", stored[1].Wrapped.Value);
+        }
+        finally
+        {
+            await myContext.Database.EnsureDeletedAsync();
+        }
+    }
+
+    [TestMethod]
     [DataRow(100)]
     [DataRow(1000)]
     public async Task Sync(int value)

@@ -19,3 +19,16 @@ public class TestRow
 
     public TestEnum? Value4 { get; set; }
 }
+
+public readonly struct StringWrapper
+{
+    public StringWrapper(string value) => Value = value;
+    public string Value { get; }
+    public override string ToString() => Value;
+}
+
+public class ConverterTestRow
+{
+    public int Id { get; set; }
+    public StringWrapper Wrapped { get; set; }
+}
