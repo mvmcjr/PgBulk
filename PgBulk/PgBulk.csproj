@@ -1,11 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
     <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
-        <PackageReference Include="Npgsql" Version="[8, 10)"/>
+        <PackageReference Include="Npgsql" Version="[8,11.0.0]"/>
     </ItemGroup>
 
     <ItemGroup Condition="'$(TargetFramework)' == 'net9.0'">
-        <PackageReference Include="Npgsql" Version="[8, 11)"/>
+        <PackageReference Include="Npgsql" Version="[8,11.0.0]"/>
     </ItemGroup>
 
     <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
